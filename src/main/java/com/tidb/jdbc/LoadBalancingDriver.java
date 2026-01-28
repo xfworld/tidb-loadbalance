@@ -249,17 +249,27 @@ public class LoadBalancingDriver implements Driver {
     if(weightBackend.size() > 0){
       backend.setWeightBackend(weightBackend);
     }
-    int failedConnectionCount = 0;
+    BestResponseTimeBalanceMapper responseTimeMapper = null;
+    if (urlMapper instanceof BestResponseTimeBalanceMapper) {
+      responseTimeMapper = (BestResponseTimeBalanceMapper) urlMapper;
+    }
     for (final String url : urlMapper.apply(backend)) {
       logger.fine(() -> "Try connecting to " + url);
+      long startTime = System.nanoTime();
       final ExceptionHelper<Connection> connection = call(() -> driver.connect(url, info));
+      long responseTimeMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
       if (connection.isOk()) {
-            discoverer.succeeded(url);
-            return connection.unwrap();
+        if (responseTimeMapper != null) {
+          responseTimeMapper.recordSuccess(url, responseTimeMs);
+        }
+        discoverer.succeeded(url);
+        return connection.unwrap();
       } else {
-          failedConnectionCount ++;
-          discoverer.failed(url);
-          logger.fine(
+        if (responseTimeMapper != null) {
+          responseTimeMapper.recordFailure(url);
+        }
+        discoverer.failed(url);
+        logger.fine(
             () ->
                 String.format(
                     "Failed to connect to %s. %s", url, stringify(connection.unwrapErr())));
