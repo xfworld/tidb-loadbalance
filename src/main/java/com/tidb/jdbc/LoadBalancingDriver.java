@@ -57,7 +57,7 @@ public class LoadBalancingDriver implements Driver {
   /** The value is set by {@link System#setProperty(String, String)} */
   private static final String TIDB_MIN_DISCOVER_INTERVAL_KEY = "tidb.jdbc.min-discovery-interval";
 
-  private static final long TIDB_MIN_DISCOVER_INTERVAL = 10000;
+  private static final long TIDB_MIN_DISCOVER_INTERVAL = 1000;
   /** The value is set by {@link System#setProperty(String, String)} */
   private static final String TIDB_MAX_DISCOVER_INTERVAL_KEY = "tidb.jdbc.max-discovery-interval";
 
@@ -155,22 +155,26 @@ public class LoadBalancingDriver implements Driver {
     }
   }
 
-  @SuppressWarnings("unchecked")
-  static Function<Backend, String[]> createUrlMapper(String type) {
-    if (type.equalsIgnoreCase("roundrobin")) {
-      type = RoundRobinUrlMapper.class.getName();
-    } else if (type.equalsIgnoreCase("random")) {
-      type = RandomShuffleUrlMapper.class.getName();
-    } else if (type.equalsIgnoreCase("weight")){
-      type = WeightRandomShuffleUrlMapper.class.getName();
-    }
+    @SuppressWarnings("unchecked")
+    static Function<Backend, String[]> createUrlMapper(String type) {
+        if (type.equalsIgnoreCase("roundrobin")) {
+            type = RoundRobinUrlMapper.class.getName();
+        } else if (type.equalsIgnoreCase("random")) {
+            type = RandomShuffleUrlMapper.class.getName();
+        } else if (type.equalsIgnoreCase("weight")){
+            type = WeightRandomShuffleUrlMapper.class.getName();
+        } else if(type.equalsIgnoreCase("globalroundrobin")){
+            type = GlobalRoundRobinUrlMapper.class.getName();
+        } else if(type.equalsIgnoreCase("bestresponsetime")){
+            type = BestResponseTimeBalanceMapper.class.getName();
+        }
 
-    final String finalType = type;
-    return uncheckedCall(
-        () ->
-            (Function<Backend, String[]>)
-                Class.forName(finalType).getDeclaredConstructor().newInstance());
-  }
+        final String finalType = type;
+        return uncheckedCall(
+                () ->
+                        (Function<Backend, String[]>)
+                                Class.forName(finalType).getDeclaredConstructor().newInstance());
+    }
 
   private static Function<Backend, String[]> createUrlMapper() {
     final String provider =
@@ -231,7 +235,9 @@ public class LoadBalancingDriver implements Driver {
   private Connection connect(final Discoverer discoverer, final Properties info)
       throws SQLException {
     String[] backends = null;
-    if (System.currentTimeMillis() - discoverer.getLastReloadTime() > minReloadInterval) {
+    // Trigger reload if failed backends count reaches threshold or reload interval has passed
+    if (discoverer.failedBackends() >= discoverer.getBackendReloadThreshold()
+        || System.currentTimeMillis() - discoverer.getLastReloadTime() > minReloadInterval) {
       backends = discoverer.getAndReload();
     } else {
       backends = discoverer.get();
@@ -243,15 +249,17 @@ public class LoadBalancingDriver implements Driver {
     if(weightBackend.size() > 0){
       backend.setWeightBackend(weightBackend);
     }
+    int failedConnectionCount = 0;
     for (final String url : urlMapper.apply(backend)) {
       logger.fine(() -> "Try connecting to " + url);
       final ExceptionHelper<Connection> connection = call(() -> driver.connect(url, info));
       if (connection.isOk()) {
-        discoverer.succeeded(url);
-        return connection.unwrap();
+            discoverer.succeeded(url);
+            return connection.unwrap();
       } else {
-        discoverer.failed(url);
-        logger.fine(
+          failedConnectionCount ++;
+          discoverer.failed(url);
+          logger.fine(
             () ->
                 String.format(
                     "Failed to connect to %s. %s", url, stringify(connection.unwrapErr())));
@@ -370,15 +378,23 @@ public class LoadBalancingDriver implements Driver {
           continue;
         }
         String[] hostArray = host.split(":");
-        if(hostArray.length != 2){
+        if(hostArray.length != 3){
           throw new SQLException("weight url config error, example : jdbc:tidb://{ip1}:{port1}:{weight1},{ip2}:{port2}:{weight2},{ip3}:{port3}:{weight3}/db?tidb.jdbc.url-mapper=weight");
         }
+        String ip = hostArray[0];
+        String port = hostArray[1];
+        String weight = hostArray[2];
         String url = tidbUrl.replaceFirst(
-                MYSQL_URL_PREFIX_REGEX, format("jdbc:mysql://%s:%s", host.split(":")[0], host.split(":")[1]));
+                MYSQL_URL_PREFIX_REGEX, format("jdbc:mysql://%s:%s", ip, port));
         if(backendMap.containsKey(url)){
           throw new SQLException(host + " is repeated ");
         }else {
-          backendMap.put(url,new Weight(url,hostInfo.getPort(),0));
+          try {
+            int weightValue = Integer.parseInt(weight);
+            backendMap.put(url, new Weight(url, Integer.parseInt(port), weightValue, 0));
+          } catch (NumberFormatException e) {
+            throw new SQLException("Invalid weight value: " + weight + " for host: " + host, e);
+          }
         }
         mysqlUrl.set(url);
     }

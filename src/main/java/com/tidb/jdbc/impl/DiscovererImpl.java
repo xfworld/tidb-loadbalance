@@ -46,6 +46,10 @@ public class DiscovererImpl implements Discoverer {
 
   private static final String TIDB_DISCOVERY = "tidb.discovery";
 
+  private static final String TIDB_DISCOVERY_THRESHOLD = "tidb.jdbc.discovery-threshold";
+
+  private static final int DEFAULT_BACKEND_RELOAD_THRESHOLD = 3;
+
   private final String[] bootstrapUrl;
   private final Properties info;
   private final Driver driver;
@@ -57,6 +61,8 @@ public class DiscovererImpl implements Discoverer {
 
   private Map<String,Integer> weightBankend = new ConcurrentHashMap<>();
 
+  private final int banckendReloadThreshold;
+
   public DiscovererImpl(
       final Driver driver,
       final String bootstrapUrl,
@@ -67,7 +73,38 @@ public class DiscovererImpl implements Discoverer {
     this.info = info != null ? (Properties) info.clone() : null;
     this.backends.set(this.bootstrapUrl);
     this.executor = executor;
+    this.banckendReloadThreshold = parseReloadThreshold(info);
     discover(info);
+  }
+
+  /**
+   * Parse the backend reload threshold from connection properties.
+   * If not configured, returns the default value (3).
+   *
+   * @param info connection properties
+   * @return the configured threshold or default value
+   */
+  private int parseReloadThreshold(Properties info) {
+    if (info == null) {
+      return DEFAULT_BACKEND_RELOAD_THRESHOLD;
+    }
+
+    String thresholdStr = info.getProperty(TIDB_DISCOVERY_THRESHOLD);
+    if (thresholdStr == null || thresholdStr.trim().isEmpty()) {
+      return DEFAULT_BACKEND_RELOAD_THRESHOLD;
+    }
+
+    try {
+      int threshold = Integer.parseInt(thresholdStr.trim());
+      if (threshold < 1) {
+        throw new IllegalArgumentException(
+            TIDB_DISCOVERY_THRESHOLD + " must be >= 1, got: " + threshold);
+      }
+      return threshold;
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException(
+          "Invalid value for " + TIDB_DISCOVERY_THRESHOLD + ": " + thresholdStr, e);
+    }
   }
 
   private String[] getValidBackends() {
@@ -125,6 +162,16 @@ public class DiscovererImpl implements Discoverer {
       return;
     }
     failedBackends.put(backend, backend);
+  }
+
+  @Override
+  public int failedBackends() {
+    return failedBackends.size();
+  }
+
+  @Override
+  public int getBackendReloadThreshold() {
+    return banckendReloadThreshold;
   }
 
   private String[] discover(final Properties info) {

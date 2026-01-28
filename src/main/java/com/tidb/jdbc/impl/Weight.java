@@ -4,12 +4,22 @@ public class Weight {
 
     private String ip;
 
+    private Integer port;
+
     private Integer weight;
 
     private Integer currentWeight;
 
     public Weight(String ip, Integer weight, Integer currentWeight) {
         this.ip = ip;
+        this.weight = weight;
+        this.currentWeight = currentWeight;
+        this.port = null;
+    }
+
+    public Weight(String ip, Integer port, Integer weight, Integer currentWeight) {
+        this.ip = ip;
+        this.port = port;
         this.weight = weight;
         this.currentWeight = currentWeight;
     }
@@ -20,6 +30,14 @@ public class Weight {
 
     public void setIp(String ip) {
         this.ip = ip;
+    }
+
+    public Integer getPort() {
+        return port;
+    }
+
+    public void setPort(Integer port) {
+        this.port = port;
     }
 
     public Integer getWeight() {

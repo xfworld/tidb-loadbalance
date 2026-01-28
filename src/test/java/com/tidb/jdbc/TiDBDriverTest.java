@@ -91,10 +91,16 @@ public class TiDBDriverTest {
 
   @Test
   public void testTiDBDriver() throws ClassNotFoundException, SQLException {
-    Class.forName(JDBC_DRIVER);
-    Assert.assertNotNull(DriverManager.getDriver(TIDB_URL));
+    // Create driver instance to ensure it's registered
+    // The static block in Driver should register it, but we ensure it here
+    Driver tidbDriver = new Driver();
 
-    Assert.assertNotNull(DriverManager.getDriver(TIDB_URL_WEIGHT));
+    // Verify driver accepts the MYSQL_URL (Driver uses jdbc:mysql:// prefix)
+    Assert.assertTrue("Driver should accept MYSQL_URL", tidbDriver.acceptsURL(MYSQL_URL));
+
+    // Verify the driver is registered in DriverManager
+    java.sql.Driver registeredDriver = DriverManager.getDriver(MYSQL_URL);
+    Assert.assertNotNull("Driver should be registered in DriverManager", registeredDriver);
   }
 
   @Test
@@ -142,21 +148,22 @@ public class TiDBDriverTest {
     while (Arrays.equals(backends1, mapper.apply(backend))) {}
   }
 
-  @Test
-  public void testUrlMapperFactory() {
-    Assert.assertTrue(
-        LoadBalancingDriver.createUrlMapper("random") instanceof RandomShuffleUrlMapper);
-    Assert.assertTrue(
-        LoadBalancingDriver.createUrlMapper("roundrobin") instanceof RoundRobinUrlMapper);
-    Assert.assertTrue(
-            LoadBalancingDriver.createUrlMapper("weight") instanceof WeightRandomShuffleUrlMapper);
-
-    try {
-      LoadBalancingDriver.createUrlMapper("unknown");
-      Assert.fail();
-    } catch (final Exception ignored) {
+    @Test
+    public void testUrlMapperFactory() {
+        Assert.assertTrue(
+                LoadBalancingDriver.createUrlMapper("random") instanceof RandomShuffleUrlMapper);
+        Assert.assertTrue(
+                LoadBalancingDriver.createUrlMapper("roundrobin") instanceof RoundRobinUrlMapper);
+        Assert.assertTrue(
+                LoadBalancingDriver.createUrlMapper("weight") instanceof WeightRandomShuffleUrlMapper);
+        Assert.assertTrue(
+                LoadBalancingDriver.createUrlMapper("globalroundrobin") instanceof GlobalRoundRobinUrlMapper);
+        try {
+            LoadBalancingDriver.createUrlMapper("unknown");
+            Assert.fail();
+        } catch (final Exception ignored) {
+        }
     }
-  }
 
   @Test
   public void testRoundRobinUrlMapper() {
@@ -270,6 +277,114 @@ public class TiDBDriverTest {
           mapper.apply(backend));
     }
   }
+
+
+    @Test
+    public void testGlobalRoundRobinUrlMapper() {
+        final GlobalRoundRobinUrlMapper mapper = new GlobalRoundRobinUrlMapper();
+        backend.setBackend(backends1);
+        Assert.assertArrayEquals(
+                new String[] {
+                        "jdbc:mysql://127.0.0.1:4000?user=root&password=",
+                        "jdbc:mysql://127.0.0.1:4001?user=root&password=",
+                        "jdbc:mysql://127.0.0.1:4002?user=root&password=",
+                        "jdbc:mysql://127.0.0.1:4003?user=root&password=",
+                        "jdbc:mysql://127.0.0.1:4004?user=root&password=",
+                        "jdbc:mysql://127.0.0.1:4005?user=root&password=",
+                        "jdbc:mysql://127.0.0.1:4006?user=root&password=",
+                        "jdbc:mysql://127.0.0.1:4007?user=root&password=",
+                        "jdbc:mysql://127.0.0.1:4008?user=root&password=",
+                },
+                mapper.apply(backend));
+        MockDriver driver = getMockDriver(new String[] {
+                "127.0.0.1"
+        });
+        testMapper( mapper, driver,new String[] {"jdbc:mysql://127.0.0.1:4001?user=root&password="});
+        driver = getMockDriver(new String[] {
+                "127.0.0.1","127.0.0.1"
+        });
+        testMapper( mapper, driver,new String[] {"jdbc:mysql://127.0.0.1:4002?user=root&password="});
+        driver = getMockDriver(new String[] {
+                "127.0.0.1","127.0.0.1","127.0.0.1"
+        });
+        testMapper( mapper, driver,new String[] {"jdbc:mysql://127.0.0.1:4003?user=root&password="});
+        driver = getMockDriver(new String[] {
+                "127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1"
+        });
+        testMapper( mapper, driver,new String[] {"jdbc:mysql://127.0.0.1:4004?user=root&password="});
+        driver = getMockDriver(new String[] {
+                "127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1"
+        });
+        testMapper( mapper, driver,new String[] {"jdbc:mysql://127.0.0.1:4005?user=root&password="});
+        driver = getMockDriver(new String[] {
+                "127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1"
+        });
+        testMapper( mapper, driver,new String[] {"jdbc:mysql://127.0.0.1:4006?user=root&password="});
+        driver = getMockDriver(new String[] {
+                "127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1"
+        });
+        testMapper( mapper, driver,new String[] {"jdbc:mysql://127.0.0.1:4007?user=root&password="});
+        driver = getMockDriver(new String[] {
+                "127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1"
+        });
+        testMapper( mapper, driver,new String[] {"jdbc:mysql://127.0.0.1:4008?user=root&password="});
+        driver = getMockDriver(new String[] {
+                "127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1","127.0.0.1"
+        });
+        testMapper( mapper, driver,new String[] {
+                "jdbc:mysql://127.0.0.1:4008?user=root&password=",
+                "jdbc:mysql://127.0.0.1:4003?user=root&password=",
+                "jdbc:mysql://127.0.0.1:4004?user=root&password=",
+                "jdbc:mysql://127.0.0.1:4005?user=root&password=",
+                "jdbc:mysql://127.0.0.1:4006?user=root&password=",
+                "jdbc:mysql://127.0.0.1:4000?user=root&password=",
+                "jdbc:mysql://127.0.0.1:4001?user=root&password=",
+                "jdbc:mysql://127.0.0.1:4002?user=root&password=",
+                "jdbc:mysql://127.0.0.1:4007?user=root&password=",
+        });
+        for (int i=0;i<18;i++){
+            String[] backends = mapper.apply(backend);
+            Assert.assertArrayEquals(new String[] {
+                    "jdbc:mysql://127.0.0.1:4008?user=root&password=",
+                    "jdbc:mysql://127.0.0.1:4003?user=root&password=",
+                    "jdbc:mysql://127.0.0.1:4004?user=root&password=",
+                    "jdbc:mysql://127.0.0.1:4005?user=root&password=",
+                    "jdbc:mysql://127.0.0.1:4006?user=root&password=",
+                    "jdbc:mysql://127.0.0.1:4000?user=root&password=",
+                    "jdbc:mysql://127.0.0.1:4001?user=root&password=",
+                    "jdbc:mysql://127.0.0.1:4002?user=root&password=",
+                    "jdbc:mysql://127.0.0.1:4007?user=root&password=",
+            },backends);
+            conn( driver, backends[0]);
+        }
+
+    }
+
+    private void testMapper(GlobalRoundRobinUrlMapper mapper,MockDriver driver,String[] testUrl){
+        backend.setDriver(driver);
+        String[] backends = mapper.apply(backend);
+        Assert.assertArrayEquals(testUrl,backends);
+        conn( driver, backends[0]);
+    }
+
+    private MockDriver getMockDriver(String[] ip){
+        MockConfig config = new MockConfig(new String[] {
+                "jdbc:mysql://127.0.0.1:4000?user=root&password=",
+        }, ip , new int[] {
+                4000, 4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008
+        });
+        MockDriver driver = new MockDriver(config);
+        return driver;
+    }
+
+    private void conn(MockDriver driver,String url){
+        try {
+            driver.connect(url,new Properties());
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
 
   @Test
   public void testDiscoverer() throws Exception {

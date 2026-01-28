@@ -31,4 +31,8 @@ public interface Discoverer {
   void succeeded(String backend);
 
   void failed(String backend);
+
+  int failedBackends();
+
+  int getBackendReloadThreshold();
 }

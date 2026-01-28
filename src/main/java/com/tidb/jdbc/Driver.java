@@ -19,7 +19,7 @@ package com.tidb.jdbc;
 /** jdbc:tidb://host:port/database */
 public class Driver extends LoadBalancingDriver {
 
-  public static final String TIDB_URL_PREFIX = "jdbc:tidb://";
+  public static final String TIDB_URL_PREFIX = "jdbc:mysql://";
 
   static {
     ExceptionHelper.uncheckedRun(() -> java.sql.DriverManager.registerDriver(new Driver()));
