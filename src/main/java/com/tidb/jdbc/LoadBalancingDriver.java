@@ -51,6 +51,7 @@ public class LoadBalancingDriver implements Driver {
   private static final String TIDB_URL_MAPPER = "tidb.jdbc.url-mapper";
 
   private static final String TIDB_DISCOVERY = "tidb.discovery";
+  private static final String TIDB_DISCOVERY_THRESHOLD = "tidb.jdbc.discovery-threshold";
 
   /** The value is set by {@link System#setProperty(String, String)} */
   private static final String URL_PROVIDER = "url.provider";
@@ -246,6 +247,8 @@ public class LoadBalancingDriver implements Driver {
     if(backends != null){
       backend.setBackend(backends);
     }
+    backend.setDriver(driver);
+    backend.setInfo(info);
     if(weightBackend.size() > 0){
       backend.setWeightBackend(weightBackend);
     }
@@ -286,7 +289,27 @@ public class LoadBalancingDriver implements Driver {
     if(mapper != null){
       this.urlMapper = mapper;
     }
-    return connect(checkAndCreateDiscoverer(mysqlUrl, info), info);
+    Properties discoveryInfo = buildDiscoveryProperties(info);
+    return connect(checkAndCreateDiscoverer(mysqlUrl, discoveryInfo), info);
+  }
+
+  private Properties buildDiscoveryProperties(Properties info) {
+    String thresholdFromUrl = properties == null ? null : properties.getProperty(TIDB_DISCOVERY_THRESHOLD);
+    if (thresholdFromUrl == null || thresholdFromUrl.trim().isEmpty()) {
+      return info;
+    }
+    if (info != null) {
+      String thresholdFromInfo = info.getProperty(TIDB_DISCOVERY_THRESHOLD);
+      if (thresholdFromInfo != null && !thresholdFromInfo.trim().isEmpty()) {
+        return info;
+      }
+    }
+    Properties merged = new Properties();
+    if (info != null) {
+      merged.putAll(info);
+    }
+    merged.setProperty(TIDB_DISCOVERY_THRESHOLD, thresholdFromUrl.trim());
+    return merged;
   }
 
   private String signature(final String tidbUrl, final Properties info) {

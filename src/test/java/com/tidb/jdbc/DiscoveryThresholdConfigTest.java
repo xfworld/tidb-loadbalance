@@ -20,6 +20,9 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicReference;
+
+import com.tidb.jdbc.impl.RoundRobinUrlMapper;
 
 /**
  * Unit tests for tidb.jdbc.discovery-threshold configuration parameter validation
@@ -189,5 +192,51 @@ public class DiscoveryThresholdConfigTest {
       assertTrue("Error message should mention it's invalid",
           message.contains("Invalid value"));
     }
+  }
+
+  @Test
+  public void testDiscoveryThresholdFromUrlAppliedToDiscoverer() throws Exception {
+    final String thresholdKey = "tidb.jdbc.discovery-threshold";
+    final AtomicReference<Properties> capturedProperties = new AtomicReference<>();
+    final DiscovererFactory discovererFactory =
+        (driver, url, info, executor) -> {
+          capturedProperties.set(info);
+          return new MockDiscoverer(new String[] {"jdbc:mysql://127.0.0.1:4000/test"});
+        };
+    final LoadBalancingDriver loadBalancingDriver =
+        new LoadBalancingDriver(
+            "jdbc:tidb://", new RoundRobinUrlMapper(), new MockDriver(), discovererFactory);
+
+    loadBalancingDriver.connect(
+        "jdbc:tidb://127.0.0.1:4000/test?tidb.jdbc.discovery-threshold=1",
+        new Properties());
+
+    Properties captured = capturedProperties.get();
+    assertNotNull("Discoverer should receive properties", captured);
+    assertEquals("1", captured.getProperty(thresholdKey));
+  }
+
+  @Test
+  public void testDiscoveryThresholdPropertiesOverrideUrl() throws Exception {
+    final String thresholdKey = "tidb.jdbc.discovery-threshold";
+    final AtomicReference<Properties> capturedProperties = new AtomicReference<>();
+    final DiscovererFactory discovererFactory =
+        (driver, url, info, executor) -> {
+          capturedProperties.set(info);
+          return new MockDiscoverer(new String[] {"jdbc:mysql://127.0.0.1:4000/test"});
+        };
+    final LoadBalancingDriver loadBalancingDriver =
+        new LoadBalancingDriver(
+            "jdbc:tidb://", new RoundRobinUrlMapper(), new MockDriver(), discovererFactory);
+    Properties props = new Properties();
+    props.setProperty(thresholdKey, "5");
+
+    loadBalancingDriver.connect(
+        "jdbc:tidb://127.0.0.1:4000/test?tidb.jdbc.discovery-threshold=1",
+        props);
+
+    Properties captured = capturedProperties.get();
+    assertNotNull("Discoverer should receive properties", captured);
+    assertEquals("5", captured.getProperty(thresholdKey));
   }
 }
