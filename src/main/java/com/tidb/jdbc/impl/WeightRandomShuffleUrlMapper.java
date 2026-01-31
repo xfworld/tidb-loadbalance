@@ -67,7 +67,7 @@ public class WeightRandomShuffleUrlMapper implements Function<Backend, String[]>
       }
     }
     List<Map.Entry<String,Weight>> list = new ArrayList<>(weightMap.entrySet());
-    //升序排序
+    //降序排序：将 currentWeight 最大的放在前面（平滑加权轮询算法）
     list.sort((o1, o2) -> o2.getValue().getCurrentWeight().compareTo(o1.getValue().getCurrentWeight()));
     String[] result = new String[list.size()];
     for(int i=0;i<list.size();i++){

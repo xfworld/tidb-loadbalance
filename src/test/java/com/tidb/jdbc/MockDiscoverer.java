@@ -52,6 +52,16 @@ public class MockDiscoverer implements Discoverer {
   public void failed(String backend) {}
 
   @Override
+  public int failedBackends() {
+    return 0;
+  }
+
+  @Override
+  public int getBackendReloadThreshold() {
+    return 3;
+  }
+
+  @Override
   public long getLastReloadTime() {
     return 0;
   }
